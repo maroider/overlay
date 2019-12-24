@@ -5,10 +5,15 @@ use imgui_wgpu::Renderer;
 use imgui_winit_support;
 use winit::{
     dpi::LogicalPosition,
-    event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event::{
+        DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, VirtualKeyCode,
+        WindowEvent,
+    },
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
+
+mod os;
 
 fn main() {
     env_logger::init();
@@ -23,6 +28,7 @@ fn main() {
             .with_decorations(false)
             .build(&event_loop)
             .unwrap();
+        os::make_window_overlay(&window);
 
         let hidpi_factor = window.hidpi_factor();
 
@@ -102,6 +108,8 @@ fn main() {
     let mut last_frame = Instant::now();
     let mut demo_open = true;
 
+    let mut overlay_clickable = false;
+
     // Event loop
     event_loop.run(move |event, _, control_flow| {
         *control_flow = if cfg!(feature = "metal-auto-capture") {
@@ -126,20 +134,24 @@ fn main() {
 
                 swap_chain = device.create_swap_chain(&surface, &sc_desc);
             }
-            Event::WindowEvent {
+            Event::DeviceEvent {
                 event:
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                virtual_keycode: Some(VirtualKeyCode::Escape),
-                                state: ElementState::Pressed,
-                                ..
-                            },
+                    DeviceEvent::Key(KeyboardInput {
+                        state: ElementState::Pressed,
+                        virtual_keycode: Some(VirtualKeyCode::Escape),
+                        modifiers: ModifiersState { shift: true, .. },
                         ..
-                    },
+                    }),
                 ..
+            } => {
+                if overlay_clickable {
+                    os::make_window_overlay_clickthrough(&window);
+                } else {
+                    os::make_window_overlay_clickable(&window);
+                }
+                overlay_clickable = !overlay_clickable;
             }
-            | Event::WindowEvent {
+            Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 ..
             } => {
