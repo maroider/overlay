@@ -21,3 +21,11 @@ winit = "0.20.0-alpha5"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.8", features = ["windef", "winuser"] }
+
+[dev-dependencies]
+env_logger = "0.7.1"
+imgui = "0.2.1"
+imgui-wgpu = "0.4.1"
+imgui-winit-support = { version = "0.2.1", default-features = false, features = ["winit-20"] }
+wgpu = "0.4.0"
+winit = "0.20.0-alpha5"
