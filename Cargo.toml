@@ -4,6 +4,18 @@ version = "0.1.0"
 authors = ["Markus Røyset <maroider@protonmail.com>"]
 edition = "2018"
 
+description = "A way to create game overlays"
+documentation = "https://docs.rs/overlay"
+repository = "https://github.com/maroider/overlay"
+
+readme = "README.md"
+keywords = ["overlay"]
+categories = ["gui"]
+
+license = "MIT OR APACHE-2.0"
+
+maintenance = { status = "actively-developed" }
+
 [dependencies]
 winit = "0.20.0-alpha5"
 
