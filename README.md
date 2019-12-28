@@ -5,6 +5,9 @@ Game overlays are usually created by hooking into the game's process. That kind 
 ## Limitiations
  * The game has to be in either Windowed or Windowed Borderless.
  * Currently only works on Windows.
+ * There's currenty no way to specify which monitor the overlay spawns on.
+ * The window that the overlay is based on will show as an icon in the task bar.
+ * The window that the overlay is based on behaves like a window in other inconvenient ways.
 
 ## How does it work?
 
