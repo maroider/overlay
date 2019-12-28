@@ -10,6 +10,7 @@ mod os;
 
 // TODO: Provide a method which lets you chose which monitor the overlay spawns on top of.
 
+/// Object that lets you build overlays.
 pub struct OverlayBuilder {
     window_builder: WindowBuilder,
     active_opacity: Option<u8>,
@@ -28,6 +29,7 @@ impl OverlayBuilder {
         }
     }
 
+    /// Set the overlay's window title.
     pub fn with_title<T: Into<String>>(self, title: T) -> Self {
         Self {
             window_builder: self.window_builder.with_title(title),
@@ -35,6 +37,7 @@ impl OverlayBuilder {
         }
     }
 
+    /// Set the opacity of the overlay when it is active.
     pub fn with_active_opacity(self, opacity: u8) -> Self {
         Self {
             active_opacity: Some(opacity),
@@ -42,6 +45,7 @@ impl OverlayBuilder {
         }
     }
 
+    /// Set the opacity of the overlay when it is not active.
     pub fn with_inactive_opacity(self, opacity: u8) -> Self {
         Self {
             inactive_opacity: Some(opacity),
@@ -49,6 +53,7 @@ impl OverlayBuilder {
         }
     }
 
+    /// Create the overlay window. The overlay will be inactive upon creation.
     pub fn build<T: 'static>(
         self,
         event_loop: &EventLoop<T>,
@@ -74,6 +79,7 @@ impl OverlayBuilder {
     }
 }
 
+/// An overlay.
 pub struct Overlay {
     window: Window,
     active: bool,
