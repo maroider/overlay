@@ -12,6 +12,11 @@ fn main() {
     let event_loop = EventLoop::new();
     let mut overlay = OverlayBuilder::new().build();
 
+    // Initialize renderer
+
+    // Display the overlay
+    overlay.init();
+
     event_loop.run(..);
 }
 ```
