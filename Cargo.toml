@@ -5,8 +5,7 @@ authors = ["Markus Røyset <maroider@protonmail.com>"]
 edition = "2018"
 
 [dependencies]
-env_logger = "0.7.1"
-winit = "0.20.0-alpha4"
+winit = "0.20.0-alpha5"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "0.3.8", features = ["windef", "winuser"] }
