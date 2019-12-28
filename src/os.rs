@@ -2,17 +2,17 @@ use winit::window::Window;
 
 pub fn make_window_overlay(window: &Window) {
     #[cfg(windows)]
-    windows::make_window_overlay(window);
+    windows::make_window_overlay(window, 0);
 }
 
-pub fn make_window_overlay_clickthrough(window: &Window) {
+pub fn make_window_overlay_clickthrough(window: &Window, opacity: u8) {
     #[cfg(windows)]
-    windows::make_window_overlay(window);
+    windows::make_window_overlay(window, opacity);
 }
 
-pub fn make_window_overlay_clickable(window: &Window) {
+pub fn make_window_overlay_clickable(window: &Window, opacity: u8) {
     #[cfg(windows)]
-    windows::make_window_overlay_clickable(window);
+    windows::make_window_overlay_clickable(window, opacity);
 }
 
 #[cfg(windows)]
@@ -29,7 +29,7 @@ mod windows {
     const WS_EX_TRANSPARENT: isize = 0x20;
     const WS_EX_LAYERED: isize = 0x80000;
 
-    pub fn make_window_overlay(window: &Window) {
+    pub fn make_window_overlay(window: &Window, opacity: u8) {
         window.set_always_on_top(true);
 
         let hwnd = window.hwnd() as *mut HWND__;
@@ -50,14 +50,14 @@ mod windows {
             panic!("SetWindowLongPtr returned 0");
         }
 
-        if unsafe { SetLayeredWindowAttributes(hwnd, 0, 220, LWA_ALPHA) } == 0 {
+        if unsafe { SetLayeredWindowAttributes(hwnd, 0, opacity, LWA_ALPHA) } == 0 {
             panic!("SetLayeredWindowAttributes returned 0");
         }
 
         unsafe { make_last_active_window_active(hwnd) };
     }
 
-    pub fn make_window_overlay_clickable(window: &Window) {
+    pub fn make_window_overlay_clickable(window: &Window, opacity: u8) {
         window.set_always_on_top(false);
 
         let hwnd = window.hwnd() as *mut HWND__;
@@ -78,7 +78,7 @@ mod windows {
             panic!("SetWindowLongPtr returned 0");
         }
 
-        if unsafe { SetLayeredWindowAttributes(hwnd, 0, 255, LWA_ALPHA) } == 0 {
+        if unsafe { SetLayeredWindowAttributes(hwnd, 0, opacity, LWA_ALPHA) } == 0 {
             panic!("SetLayeredWindowAttributes returned 0");
         }
     }
