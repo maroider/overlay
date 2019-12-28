@@ -82,6 +82,7 @@ impl OverlayBuilder {
 /// An overlay.
 pub struct Overlay {
     window: Window,
+    visible: bool,
     active: bool,
     active_opacity: u8,
     inactive_opacity: u8,
@@ -91,9 +92,10 @@ impl Overlay {
     fn new(window: Window, active_opacity: u8, inactive_opacity: u8) -> Self {
         Self {
             window,
+            visible: false,
+            active: false,
             active_opacity,
             inactive_opacity,
-            active: false,
         }
     }
 
@@ -107,9 +109,23 @@ impl Overlay {
         if self.active {
             os::make_window_overlay_clickthrough(&self.window, self.inactive_opacity);
         } else {
+            if !self.visible {
+                self.window.set_visible(true);
+                self.visible = true;
+            }
             os::make_window_overlay_clickable(&self.window, self.active_opacity);
         }
         self.active = !self.active;
+    }
+
+    /// Returns the underlying window.
+    ///
+    /// # Remarks
+    ///
+    /// Be careful when manipulating the window by hand. You may inadvertantly
+    /// leave the overlay in an invalid or unexpected state.
+    pub fn window(&self) -> &Window {
+        &self.window
     }
 }
 
