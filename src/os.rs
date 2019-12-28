@@ -15,6 +15,11 @@ pub fn make_window_overlay_clickable(window: &Window, opacity: u8) {
     windows::make_window_overlay_clickable(window, opacity);
 }
 
+pub fn set_window_overlay_opacity(window: &Window, opacity: u8) {
+    #[cfg(windows)]
+    windows::set_window_overlay_opacity(window, opacity);
+}
+
 #[cfg(windows)]
 mod windows {
     use winapi::{
@@ -50,9 +55,7 @@ mod windows {
             panic!("SetWindowLongPtr returned 0");
         }
 
-        if unsafe { SetLayeredWindowAttributes(hwnd, 0, opacity, LWA_ALPHA) } == 0 {
-            panic!("SetLayeredWindowAttributes returned 0");
-        }
+        set_window_overlay_opacity(window, opacity);
 
         unsafe { make_last_active_window_active(hwnd) };
     }
@@ -78,9 +81,7 @@ mod windows {
             panic!("SetWindowLongPtr returned 0");
         }
 
-        if unsafe { SetLayeredWindowAttributes(hwnd, 0, opacity, LWA_ALPHA) } == 0 {
-            panic!("SetLayeredWindowAttributes returned 0");
-        }
+        set_window_overlay_opacity(window, opacity);
     }
 
     unsafe fn make_last_active_window_active(hwnd: *mut HWND__) {
@@ -103,5 +104,13 @@ mod windows {
         }
 
         SetForegroundWindow(last_window);
+    }
+
+    pub fn set_window_overlay_opacity(window: &Window, opacity: u8) {
+        let hwnd = window.hwnd() as *mut HWND__;
+
+        if unsafe { SetLayeredWindowAttributes(hwnd, 0, opacity, LWA_ALPHA) } == 0 {
+            panic!("SetLayeredWindowAttributes returned 0");
+        }
     }
 }

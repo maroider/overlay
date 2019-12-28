@@ -1,7 +1,7 @@
 use std::{error::Error, fmt};
 
 use winit::{
-    dpi::{LogicalPosition, PhysicalSize},
+    dpi::LogicalPosition,
     event_loop::EventLoop,
     window::{Window, WindowBuilder},
 };
@@ -62,7 +62,6 @@ impl OverlayBuilder {
             .window_builder
             .with_transparent(true)
             .with_decorations(false)
-            .with_visible(false)
             .build(&event_loop)?;
 
         os::make_window_overlay(&window);
@@ -82,7 +81,7 @@ impl OverlayBuilder {
 /// An overlay.
 pub struct Overlay {
     window: Window,
-    visible: bool,
+    init: bool,
     active: bool,
     active_opacity: u8,
     inactive_opacity: u8,
@@ -92,27 +91,36 @@ impl Overlay {
     fn new(window: Window, active_opacity: u8, inactive_opacity: u8) -> Self {
         Self {
             window,
-            visible: false,
+            init: false,
             active: false,
             active_opacity,
             inactive_opacity,
         }
     }
 
-    pub fn size(&self) -> PhysicalSize {
-        self.window
-            .inner_size()
-            .to_physical(self.window.hidpi_factor())
+    /// Initializes the overlay. Should be called before calling `Overlay::toggle()`.
+    pub fn init(&mut self) {
+        if !self.init {
+            os::set_window_overlay_opacity(&self.window, self.inactive_opacity);
+            self.init = true;
+        }
     }
 
+    /// Toggle the overlay.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `Overlay::init()` hasn't already been called.
     pub fn toggle(&mut self) {
+        if !self.init {
+            panic!(
+                "`Overlay::init()` should be called once before ever calling `Overlay::toggle()`"
+            );
+        }
+
         if self.active {
             os::make_window_overlay_clickthrough(&self.window, self.inactive_opacity);
         } else {
-            if !self.visible {
-                self.window.set_visible(true);
-                self.visible = true;
-            }
             os::make_window_overlay_clickable(&self.window, self.active_opacity);
         }
         self.active = !self.active;
