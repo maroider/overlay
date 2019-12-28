@@ -8,8 +8,6 @@ use winit::{
 
 mod os;
 
-fn main() {}
-
 // TODO: Provide a method which lets you chose which monitor the overlay spawns on top of.
 
 pub struct OverlayBuilder {
