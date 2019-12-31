@@ -17,8 +17,24 @@ license = "MIT OR APACHE-2.0"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
+raw-window-handle = "0.3.3"
+winit = "0.20.0-alpha5"
+imgui-winit-support = "0.2.1"
+imgui = "0.2.1"
 
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "0.3.8", features = ["windef", "winuser"] }
+[target.'cfg(windows)'.dependencies.winapi]
+version = "0.3.8"
+features = [
+    "d3d11",
+    "d3dcommon",
+    "debugapi",
+    "dxgi",
+    "impl-default",
+    "libloaderapi",
+    "minwindef",
+    "windef",
+    "winerror",
+    "winuser"
+]
 
 [dev-dependencies]
