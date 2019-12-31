@@ -19,8 +19,9 @@ maintenance = { status = "actively-developed" }
 [dependencies]
 raw-window-handle = "0.3.3"
 winit = "0.20.0-alpha5"
-imgui-winit-support = "0.2.1"
+imgui-winit-support = { version = "0.2.1", default-features = false, features = ["winit-20"] }
 imgui = "0.2.1"
+wio = "0.2.2"
 
 [target.'cfg(windows)'.dependencies.winapi]
 version = "0.3.8"
@@ -38,3 +39,9 @@ features = [
 ]
 
 [dev-dependencies]
+
+[build-dependencies]
+cargo-emit = "0.1"
+dunce = "1.0.0"
+winapi = { version = "0.3.8", features = ["d3dcompiler", "winerror"] }
+wio = "0.2.2"
