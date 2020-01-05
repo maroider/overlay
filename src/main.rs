@@ -1,14 +1,16 @@
 use std::{convert::TryInto, ffi::c_void, mem, ops, ptr};
 
+use imgui::{DrawVert, TextureId};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
+use smallvec::SmallVec;
 use winapi::{
     shared::{
         dxgi::{
             IDXGIAdapter, IDXGIDevice, IDXGIFactory, IDXGISwapChain, DXGI_SWAP_CHAIN_DESC,
             DXGI_SWAP_EFFECT_DISCARD,
         },
-        dxgiformat::{DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM},
+        dxgiformat::{DXGI_FORMAT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM},
         dxgitype::DXGI_USAGE_RENDER_TARGET_OUTPUT,
         minwindef::{BOOL, HINSTANCE},
         windef::HWND,
@@ -16,24 +18,26 @@ use winapi::{
     },
     um::{
         d3d11::{
-            D3D11CreateDeviceAndSwapChain, D3D11_SHADER_RESOURCE_VIEW_DESC_u, ID3D11BlendState,
-            ID3D11Buffer, ID3D11DepthStencilState, ID3D11Device, ID3D11DeviceContext,
+            D3D11CreateDeviceAndSwapChain, ID3D11BlendState, ID3D11Buffer, ID3D11ClassInstance,
+            ID3D11DepthStencilState, ID3D11Device, ID3D11DeviceContext, ID3D11GeometryShader,
             ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
             ID3D11Resource, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D,
-            ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER, D3D11_BLEND_DESC,
-            D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
-            D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS,
-            D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC,
-            D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID, D3D11_INPUT_ELEMENT_DESC,
-            D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC, D3D11_SDK_VERSION,
-            D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SRV_DIMENSION_TEXTURE2D, D3D11_STENCIL_OP_KEEP,
-            D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC,
-            D3D11_VIEWPORT,
+            ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE,
+            D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
+            D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BUFFER_DESC,
+            D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS, D3D11_CPU_ACCESS_WRITE,
+            D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL,
+            D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_INPUT_ELEMENT_DESC,
+            D3D11_INPUT_PER_VERTEX_DATA, D3D11_PRIMITIVE_TOPOLOGY, D3D11_RASTERIZER_DESC,
+            D3D11_RECT, D3D11_SAMPLER_DESC, D3D11_SDK_VERSION, D3D11_SHADER_RESOURCE_VIEW_DESC,
+            D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE2D_DESC,
+            D3D11_TEXTURE_ADDRESS_WRAP, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
+            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE,
         },
         d3dcommon::{
-            D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_REFERENCE, D3D_DRIVER_TYPE_WARP,
-            D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0,
-            D3D_FEATURE_LEVEL_9_3,
+            D3D11_SRV_DIMENSION_TEXTURE2D, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_REFERENCE,
+            D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1,
+            D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_9_3,
         },
         // debugapi::OutputDebugStringW,
     },
@@ -69,6 +73,12 @@ fn main() {
     imgui.set_ini_filename(None);
 
     let mut renderer = D3D11Renderer::create(&window, width, height).unwrap();
+    let mut imgui_renderer = D3D11ImGuiRenderer::init(
+        unsafe { renderer.device.as_mut().unwrap() },
+        unsafe { renderer.device_context.as_mut().unwrap() },
+        &mut imgui,
+    )
+    .unwrap();
 
     window.set_visible(true);
 
@@ -91,9 +101,9 @@ fn main() {
                 platform
                     .prepare_frame(imgui.io_mut(), &window)
                     .expect("Failed to prepare frame");
-                let _ui = imgui.frame();
+                let ui = imgui.frame();
                 renderer.render();
-                unimplemented!();
+                imgui_renderer.render_ui(ui);
                 renderer.present();
             }
             _ => {}
@@ -102,19 +112,19 @@ fn main() {
 }
 
 macro_rules! release_com_object {
-    ($var:expr, $null_kind:ident) => {
-        if let Some(com_object) = unsafe { $var.as_ref() } {
+    ($var:expr) => {
+        if let Some(com_object) = unsafe { $var.as_mut() } {
             unsafe { com_object.Release() };
-            $var = ptr::$null_kind();
+            $var = ptr::null_mut();
         }
     };
 }
 
 #[allow(dead_code)]
 struct D3D11Renderer {
-    device: *const ID3D11Device,
-    device_context: *const ID3D11DeviceContext,
-    swap_chain: *const IDXGISwapChain,
+    pub device: *mut ID3D11Device,
+    pub device_context: *mut ID3D11DeviceContext,
+    swap_chain: *mut IDXGISwapChain,
     render_target_view: *mut ID3D11RenderTargetView,
 }
 
@@ -267,10 +277,10 @@ impl ops::Drop for D3D11Renderer {
         if let Some(device_context) = unsafe { self.device_context.as_ref() } {
             unsafe { device_context.ClearState() };
         }
-        release_com_object!(self.render_target_view, null_mut);
-        release_com_object!(self.swap_chain, null);
-        release_com_object!(self.device_context, null);
-        release_com_object!(self.device, null);
+        release_com_object!(self.render_target_view);
+        release_com_object!(self.swap_chain);
+        release_com_object!(self.device_context);
+        release_com_object!(self.device);
     }
 }
 
@@ -298,8 +308,8 @@ struct D3D11ImGuiRenderer {
     rasterizer_state: ComPtr<ID3D11RasterizerState>,
     blend_state: ComPtr<ID3D11BlendState>,
     depth_stencil_state: ComPtr<ID3D11DepthStencilState>,
-    vertex_buffer_size: i32,
-    index_buffer_size: i32,
+    vertex_buffer_size: u32,
+    index_buffer_size: u32,
 }
 
 #[allow(dead_code)]
@@ -425,7 +435,7 @@ impl D3D11ImGuiRenderer {
             unsafe { ComPtr::from_raw(input_layout) }
         };
 
-        let constant_buffer = {
+        let vertex_constant_buffer = {
             let mut desc = D3D11_BUFFER_DESC::default();
             desc.ByteWidth = mem::size_of::<VertexConstantBuffer>().try_into().unwrap();
             desc.Usage = D3D11_USAGE_DYNAMIC;
@@ -440,7 +450,7 @@ impl D3D11ImGuiRenderer {
                 return Err(hresult);
             }
 
-            unsafe { ComPtr::from_raw(vertex_constant_buffer) };
+            unsafe { ComPtr::from_raw(vertex_constant_buffer) }
         };
 
         let pixel_shader = {
@@ -495,7 +505,7 @@ impl D3D11ImGuiRenderer {
                 return Err(hresult);
             }
 
-            unsafe { ComPtr::from_raw(rasterizer_state) };
+            unsafe { ComPtr::from_raw(rasterizer_state) }
         };
 
         let depth_stencil_state = {
@@ -521,15 +531,17 @@ impl D3D11ImGuiRenderer {
         };
 
         let font_texture_view = {
+            let mut font_atlas = imgui.fonts();
+
             let font_texture = {
-                let text_data = imgui.fonts().build_rgba32_texture();
+                let text_data = font_atlas.build_rgba32_texture();
 
                 let mut desc = D3D11_TEXTURE2D_DESC::default();
                 desc.Width = text_data.width;
                 desc.Height = text_data.height;
                 desc.MipLevels = 1;
                 desc.ArraySize = 1;
-                desc.Format = DXGI_FORMAT_R8B8B8A8_UNORM;
+                desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
                 desc.SampleDesc.Count = 1;
                 desc.Usage = D3D11_USAGE_DEFAULT;
                 desc.BindFlags = D3D11_BIND_SHADER_RESOURCE;
@@ -552,25 +564,133 @@ impl D3D11ImGuiRenderer {
             let mut desc = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
             desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
             desc.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-            desc.u.Texture2D_mut().MipLevels = 1;
-            desc.u.Texture2D_mut().MostDetailedMip = 0;
+            unsafe { desc.u.Texture2D_mut().MipLevels = 1 };
+            unsafe { desc.u.Texture2D_mut().MostDetailedMip = 0 };
 
             let mut font_texture_view = ptr::null_mut();
-            let hresult =
-                unsafe { device.CreateShaderResourceView(&texture, &desc, &mut font_texture_view) };
+            let hresult = unsafe {
+                device.CreateShaderResourceView(
+                    font_texture.as_raw() as *mut ID3D11Resource,
+                    &desc,
+                    &mut font_texture_view,
+                )
+            };
             if hresult != S_OK {
                 return Err(hresult);
             }
 
-            unsafe { ComPtr::from_raw(font_texture_view) };
+            font_atlas.tex_id = TextureId::from(font_texture_view);
+
+            unsafe { ComPtr::from_raw(font_texture_view) }
         };
 
-        unimplemented!()
+        let font_sampler = {
+            let mut desc = D3D11_SAMPLER_DESC::default();
+            desc.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+            desc.AddressU = D3D11_TEXTURE_ADDRESS_WRAP;
+            desc.AddressV = D3D11_TEXTURE_ADDRESS_WRAP;
+            desc.AddressW = D3D11_TEXTURE_ADDRESS_WRAP;
+            desc.MipLODBias = 0.0;
+            desc.ComparisonFunc = D3D11_COMPARISON_ALWAYS;
+            desc.MinLOD = 0.0;
+            desc.MaxLOD = 0.0;
+
+            let mut font_sampler = ptr::null_mut();
+            let hresult = unsafe { device.CreateSamplerState(&desc, &mut font_sampler) };
+            if hresult != S_OK {
+                return Err(hresult);
+            }
+
+            unsafe { ComPtr::from_raw(font_sampler) }
+        };
+
+        let (vertex_buffer, vertex_buffer_size) = {
+            let vertex_buffer_size = 5_000;
+
+            let mut desc = D3D11_BUFFER_DESC::default();
+            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.ByteWidth = vertex_buffer_size * mem::size_of::<DrawVert>() as u32;
+            desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            desc.MiscFlags = 0;
+
+            let mut vertex_buffer = ptr::null_mut();
+            let hresult =
+                unsafe { device.CreateBuffer(&desc, ptr::null_mut(), &mut vertex_buffer) };
+            if hresult != S_OK {
+                return Err(hresult);
+            }
+            let vertex_buffer = unsafe { ComPtr::from_raw(vertex_buffer) };
+
+            (vertex_buffer, vertex_buffer_size)
+        };
+
+        let (index_buffer, index_buffer_size) = {
+            let vertex_buffer_size = 10_000;
+
+            let mut desc = D3D11_BUFFER_DESC::default();
+            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.ByteWidth = vertex_buffer_size * mem::size_of::<DrawVert>() as u32;
+            desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            desc.MiscFlags = 0;
+
+            let mut index_buffer = ptr::null_mut();
+            let hresult = unsafe { device.CreateBuffer(&desc, ptr::null_mut(), &mut index_buffer) };
+            if hresult != S_OK {
+                return Err(hresult);
+            }
+            let vertex_buffer = unsafe { ComPtr::from_raw(index_buffer) };
+
+            (vertex_buffer, vertex_buffer_size)
+        };
+
+        Ok(Self {
+            device,
+            device_context,
+            factory,
+            vertex_buffer,
+            index_buffer,
+            vertex_shader,
+            input_layout,
+            vertex_constant_buffer,
+            pixel_shader,
+            font_sampler,
+            font_texture_view,
+            rasterizer_state,
+            blend_state,
+            depth_stencil_state,
+            vertex_buffer_size,
+            index_buffer_size,
+        })
+    }
+
+    pub fn render_ui(&mut self, ui: imgui::Ui) {
+        let draw_data = ui.render();
+
+        if draw_data.display_size[0] <= 0.0 || draw_data.display_size[1] <= 0.0 {
+            return;
+        }
+    }
+
+    fn setup_render_state(&self) {
+        //
     }
 }
 
 impl ops::Drop for D3D11ImGuiRenderer {
     fn drop(&mut self) {
+        unsafe { self.font_sampler.Release() };
+        unsafe { self.font_texture_view.Release() };
+        unsafe { self.depth_stencil_state.Release() };
+        unsafe { self.rasterizer_state.Release() };
+        unsafe { self.blend_state.Release() };
+        unsafe { self.pixel_shader.Release() };
+        unsafe { self.vertex_constant_buffer.Release() };
+        unsafe { self.input_layout.Release() };
+        unsafe { self.vertex_shader.Release() };
+        unsafe { self.index_buffer.Release() };
+        unsafe { self.vertex_buffer.Release() };
         unsafe { self.factory.Release() };
         unsafe { self.device_context.Release() };
         unsafe { self.device.Release() };
@@ -581,3 +701,285 @@ impl ops::Drop for D3D11ImGuiRenderer {
 struct VertexConstantBuffer {
     mvp: [[f32; 4]; 4],
 }
+
+/// A backup of the D3D11 renderer state.
+///
+/// TODO: Backup Hull, Domain and Compute shaders.
+///
+/// TODO: Remove `SmallVec`
+#[must_use]
+struct BackupD3D11State {
+    scissor_rects_count: u32,
+    viewports_count: u32,
+    scissor_rects: [D3D11_RECT; D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE as usize],
+    viewports: [D3D11_VIEWPORT; D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE as usize],
+    rasterizer_state: ComPtr<ID3D11RasterizerState>,
+    blend_state: ComPtr<ID3D11BlendState>,
+    blend_factor: [f32; 4],
+    sample_mask: u32,
+    stencil_ref: u32,
+    depth_stencil_state: ComPtr<ID3D11DepthStencilState>,
+    pixel_shader_shader_resource: ComPtr<ID3D11ShaderResourceView>,
+    pixel_shader_sampler_state: ComPtr<ID3D11SamplerState>,
+    pixel_shader: ComPtr<ID3D11PixelShader>,
+    vertex_shader: ComPtr<ID3D11VertexShader>,
+    geometry_shader: ComPtr<ID3D11GeometryShader>,
+    pixel_shader_instances_count: u32,
+    vertex_shader_instances_count: u32,
+    geometry_shader_instances_count: u32,
+    pixel_shader_instances: SmallVec<[ComPtr<ID3D11ClassInstance>; 256]>,
+    vertex_shader_instances: SmallVec<[ComPtr<ID3D11ClassInstance>; 256]>,
+    geometry_shader_instances: SmallVec<[ComPtr<ID3D11ClassInstance>; 256]>,
+    primitive_topology: D3D11_PRIMITIVE_TOPOLOGY,
+    index_buffer: ComPtr<ID3D11Buffer>,
+    vertex_buffer: ComPtr<ID3D11Buffer>,
+    vertex_constant_buffer: ComPtr<ID3D11Buffer>,
+    index_buffer_offset: u32,
+    vertex_buffer_stride: u32,
+    vertex_buffer_offset: u32,
+    index_buffer_format: DXGI_FORMAT,
+    input_layout: ComPtr<ID3D11InputLayout>,
+}
+
+/// Call COM object method where the last argument is the out variable
+macro_rules! cclom {
+    ($obj:expr, $method:ident$(,)? $($arg:expr),*) => {
+        {
+            let mut out = ptr::null_mut();
+            unsafe { $obj.$method($($arg, )* &mut out) };
+            if out == ptr::null_mut() {
+                Err(concat!(stringify!($method), " returned a null-pointer"))
+            } else {
+                Ok(unsafe { ComPtr::from_raw(out) })
+            }
+        }
+    };
+}
+
+/// Call COM object method where the first argument is the out variable
+macro_rules! ccfom {
+    ($obj:expr, $method:ident$(,)? $($arg:expr),*) => {
+        {
+            let mut out = ptr::null_mut();
+            unsafe { $obj.$method(&mut out $(, $arg)* ) };
+            if out == ptr::null_mut() {
+                Err(concat!(stringify!($method), " returned a null-pointer"))
+            } else {
+                Ok(unsafe { ComPtr::from_raw(out) })
+            }
+        }
+    };
+}
+
+impl BackupD3D11State {
+    fn new(device_context: &mut ID3D11DeviceContext) -> Self {
+        let mut scissor_rects_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+        let mut viewports_count = D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE;
+        let mut scissor_rects = [D3D11_RECT::default();
+            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE as usize];
+        let mut viewports = [D3D11_VIEWPORT::default();
+            D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE as usize];
+        unsafe {
+            device_context.RSGetScissorRects(&mut scissor_rects_count, scissor_rects.as_mut_ptr())
+        };
+        unsafe { device_context.RSGetViewports(&mut viewports_count, viewports.as_mut_ptr()) };
+        let rasterizer_state = cclom!(device_context, RSGetState).unwrap();
+        let mut blend_factor = [0.0; 4];
+        let mut sample_mask = 0;
+        let blend_state = ccfom!(
+            device_context,
+            OMGetBlendState,
+            &mut blend_factor,
+            &mut sample_mask
+        )
+        .unwrap();
+        let mut stencil_ref = 0;
+        let depth_stencil_state =
+            ccfom!(device_context, OMGetDepthStencilState, &mut stencil_ref).unwrap();
+        let pixel_shader_shader_resource =
+            cclom!(device_context, PSGetShaderResources, 0, 1).unwrap();
+        let pixel_shader_sampler_state = cclom!(device_context, PSGetSamplers, 0, 1).unwrap();
+        let mut pixel_shader_instances_count = 256;
+        let mut vertex_shader_instances_count = 256;
+        let mut geometry_shader_instances_count = 256;
+        let mut pixel_shader_instances = [ptr::null_mut(); 256];
+        let mut vertex_shader_instances = [ptr::null_mut(); 256];
+        let mut geometry_shader_instances = [ptr::null_mut(); 256];
+        let pixel_shader = ccfom!(device_context, PSGetShader
+            pixel_shader_instances.as_mut_ptr(),
+            &mut pixel_shader_instances_count
+        )
+        .unwrap();
+        let vertex_shader = ccfom!(device_context, VSGetShader
+            vertex_shader_instances.as_mut_ptr(),
+            &mut vertex_shader_instances_count
+        )
+        .unwrap();
+        let vertex_constant_buffer = cclom!(device_context, VSGetConstantBuffers, 0, 1).unwrap();
+        let geometry_shader = ccfom!(device_context, GSGetShader
+            geometry_shader_instances.as_mut_ptr(),
+            &mut geometry_shader_instances_count
+        )
+        .unwrap();
+        let pixel_shader_instances = {
+            let mut wrapped_pixel_shader_instances = SmallVec::new();
+            for i in 0..pixel_shader_instances_count as usize {
+                wrapped_pixel_shader_instances
+                    .push(wrap_com_ptr(pixel_shader_instances[i]).unwrap());
+            }
+            wrapped_pixel_shader_instances
+        };
+        let vertex_shader_instances = {
+            let mut wrapped_vertex_shader_instances = SmallVec::new();
+            for i in 0..vertex_shader_instances_count as usize {
+                wrapped_vertex_shader_instances
+                    .push(wrap_com_ptr(vertex_shader_instances[i]).unwrap());
+            }
+            wrapped_vertex_shader_instances
+        };
+        let geometry_shader_instances = {
+            let mut wrapped_geometry_shader_instances = SmallVec::new();
+            for i in 0..geometry_shader_instances_count as usize {
+                wrapped_geometry_shader_instances
+                    .push(wrap_com_ptr(geometry_shader_instances[i]).unwrap());
+            }
+            wrapped_geometry_shader_instances
+        };
+
+        let mut primitive_topology = D3D11_PRIMITIVE_TOPOLOGY::default();
+        unsafe { device_context.IAGetPrimitiveTopology(&mut primitive_topology) };
+        let mut index_buffer_offset = 0;
+        let mut vertex_buffer_stride = 0;
+        let mut vertex_buffer_offset = 0;
+        let mut index_buffer_format = DXGI_FORMAT::default();
+        let index_buffer = ccfom!(
+            device_context,
+            IAGetIndexBuffer,
+            &mut index_buffer_format,
+            &mut index_buffer_offset
+        )
+        .unwrap();
+        let vertex_buffer = {
+            let mut vertex_buffer = ptr::null_mut();
+            unsafe {
+                device_context.IAGetVertexBuffers(
+                    0,
+                    1,
+                    &mut vertex_buffer,
+                    &mut vertex_buffer_stride,
+                    &mut vertex_buffer_offset,
+                )
+            };
+            wrap_com_ptr(vertex_buffer).unwrap()
+        };
+        let input_layout = ccfom!(device_context, IAGetInputLayout).unwrap();
+
+        Self {
+            scissor_rects_count,
+            viewports_count,
+            scissor_rects,
+            viewports,
+            rasterizer_state,
+            blend_state,
+            blend_factor,
+            sample_mask,
+            stencil_ref,
+            depth_stencil_state,
+            pixel_shader_shader_resource,
+            pixel_shader_sampler_state,
+            pixel_shader,
+            vertex_shader,
+            geometry_shader,
+            pixel_shader_instances_count,
+            vertex_shader_instances_count,
+            geometry_shader_instances_count,
+            pixel_shader_instances,
+            vertex_shader_instances,
+            geometry_shader_instances,
+            primitive_topology,
+            index_buffer,
+            vertex_buffer,
+            vertex_constant_buffer,
+            index_buffer_offset,
+            vertex_buffer_stride,
+            vertex_buffer_offset,
+            index_buffer_format,
+            input_layout,
+        }
+    }
+
+    fn restore(mut self, device_context: &mut ID3D11DeviceContext) {
+        unsafe {
+            device_context
+                .RSSetScissorRects(self.scissor_rects_count, self.scissor_rects.as_mut_ptr())
+        };
+        unsafe { device_context.RSSetViewports(self.viewports_count, self.viewports.as_mut_ptr()) };
+        unsafe { device_context.RSSetState(self.rasterizer_state.as_raw()) };
+        unsafe {
+            device_context.OMSetBlendState(
+                self.blend_state.as_raw(),
+                &self.blend_factor,
+                self.sample_mask,
+            )
+        };
+        unsafe {
+            device_context
+                .OMSetDepthStencilState(self.depth_stencil_state.as_raw(), self.stencil_ref)
+        };
+        unsafe {
+            device_context.PSSetShaderResources(0, 1, &self.pixel_shader_shader_resource.as_raw())
+        };
+        unsafe { device_context.PSSetSamplers(0, 1, &self.pixel_shader_sampler_state.as_raw()) };
+        unsafe {
+            device_context.PSSetShader(
+                self.pixel_shader.as_raw(),
+                mem::transmute(self.pixel_shader_instances.as_mut_ptr()),
+                self.pixel_shader_instances_count,
+            )
+        };
+        unsafe {
+            device_context.VSSetShader(
+                self.vertex_shader.as_raw(),
+                mem::transmute(self.vertex_shader_instances.as_mut_ptr()),
+                self.vertex_shader_instances_count,
+            )
+        };
+        unsafe { device_context.VSSetConstantBuffers(0, 1, &self.vertex_constant_buffer.as_raw()) };
+        unsafe {
+            device_context.GSSetShader(
+                self.geometry_shader.as_raw(),
+                mem::transmute(self.geometry_shader_instances.as_mut_ptr()),
+                self.geometry_shader_instances_count,
+            )
+        };
+        unsafe { device_context.IASetPrimitiveTopology(self.primitive_topology) };
+        unsafe {
+            device_context.IASetIndexBuffer(
+                self.index_buffer.as_raw(),
+                self.index_buffer_format,
+                self.index_buffer_offset,
+            )
+        };
+        unsafe {
+            device_context.IASetVertexBuffers(
+                0,
+                1,
+                &self.vertex_buffer.as_raw(),
+                &self.vertex_buffer_stride,
+                &self.vertex_buffer_offset,
+            )
+        };
+        unsafe { device_context.IASetInputLayout(self.input_layout.as_raw()) };
+    }
+}
+
+fn wrap_com_ptr<T: Interface>(ptr: *mut T) -> Result<ComPtr<T>, NullPointerError> {
+    if ptr != ptr::null_mut() {
+        Ok(unsafe { ComPtr::from_raw(ptr) })
+    } else {
+        Err(NullPointerError)
+    }
+}
+
+#[derive(Debug)]
+struct NullPointerError;

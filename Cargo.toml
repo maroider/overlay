@@ -17,10 +17,11 @@ license = "MIT OR APACHE-2.0"
 maintenance = { status = "actively-developed" }
 
 [dependencies]
-raw-window-handle = "0.3.3"
-winit = "0.20.0-alpha5"
-imgui-winit-support = { version = "0.2.1", default-features = false, features = ["winit-20"] }
 imgui = "0.2.1"
+imgui-winit-support = { version = "0.2.1", default-features = false, features = ["winit-20"] }
+raw-window-handle = "0.3.3"
+smallvec = "1.1.0"
+winit = "0.20.0-alpha5"
 wio = "0.2.2"
 
 [target.'cfg(windows)'.dependencies.winapi]
