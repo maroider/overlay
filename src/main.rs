@@ -1,6 +1,6 @@
 use std::{convert::TryInto, ffi::c_void, mem, ops, ptr};
 
-use imgui::{DrawVert, TextureId};
+use imgui::{DrawData, DrawIdx, DrawVert, TextureId};
 use imgui_winit_support::{HiDpiMode, WinitPlatform};
 use raw_window_handle::{HasRawWindowHandle, RawWindowHandle};
 use smallvec::SmallVec;
@@ -10,11 +10,14 @@ use winapi::{
             IDXGIAdapter, IDXGIDevice, IDXGIFactory, IDXGISwapChain, DXGI_SWAP_CHAIN_DESC,
             DXGI_SWAP_EFFECT_DISCARD,
         },
-        dxgiformat::{DXGI_FORMAT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_UNORM},
+        dxgiformat::{
+            DXGI_FORMAT, DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_UINT,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+        },
         dxgitype::DXGI_USAGE_RENDER_TARGET_OUTPUT,
         minwindef::{BOOL, HINSTANCE},
         windef::HWND,
-        winerror::{FAILED, HRESULT, S_OK},
+        winerror::{FAILED, HRESULT, SUCCEEDED, S_OK},
     },
     um::{
         d3d11::{
@@ -22,22 +25,24 @@ use winapi::{
             ID3D11DepthStencilState, ID3D11Device, ID3D11DeviceContext, ID3D11GeometryShader,
             ID3D11InputLayout, ID3D11PixelShader, ID3D11RasterizerState, ID3D11RenderTargetView,
             ID3D11Resource, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D,
-            ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE,
-            D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
-            D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO, D3D11_BUFFER_DESC,
-            D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS, D3D11_CPU_ACCESS_WRITE,
-            D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL,
-            D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_INPUT_ELEMENT_DESC,
-            D3D11_INPUT_PER_VERTEX_DATA, D3D11_PRIMITIVE_TOPOLOGY, D3D11_RASTERIZER_DESC,
-            D3D11_RECT, D3D11_SAMPLER_DESC, D3D11_SDK_VERSION, D3D11_SHADER_RESOURCE_VIEW_DESC,
-            D3D11_STENCIL_OP_KEEP, D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE2D_DESC,
-            D3D11_TEXTURE_ADDRESS_WRAP, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
+            ID3D11VertexShader, D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_INDEX_BUFFER,
+            D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_VERTEX_BUFFER, D3D11_BLEND_DESC,
+            D3D11_BLEND_INV_SRC_ALPHA, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BLEND_ZERO,
+            D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS,
+            D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC,
+            D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_MAPPED_SUBRESOURCE,
+            D3D11_PRIMITIVE_TOPOLOGY, D3D11_RASTERIZER_DESC, D3D11_RECT, D3D11_SAMPLER_DESC,
+            D3D11_SDK_VERSION, D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_STENCIL_OP_KEEP,
+            D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE_ADDRESS_WRAP,
+            D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT,
             D3D11_VIEWPORT_AND_SCISSORRECT_OBJECT_COUNT_PER_PIPELINE,
         },
         d3dcommon::{
-            D3D11_SRV_DIMENSION_TEXTURE2D, D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_REFERENCE,
-            D3D_DRIVER_TYPE_WARP, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1,
-            D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_9_3,
+            D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D11_SRV_DIMENSION_TEXTURE2D,
+            D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_REFERENCE, D3D_DRIVER_TYPE_WARP,
+            D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0,
+            D3D_FEATURE_LEVEL_9_3,
         },
         // debugapi::OutputDebugStringW,
     },
@@ -67,23 +72,23 @@ fn main() {
         (window, width, height, hidpi_factor)
     };
 
-    let mut imgui = imgui::Context::create();
-    let mut platform = WinitPlatform::init(&mut imgui);
-    platform.attach_window(imgui.io_mut(), &window, HiDpiMode::Default);
-    imgui.set_ini_filename(None);
+    // let mut imgui = imgui::Context::create();
+    // let mut platform = WinitPlatform::init(&mut imgui);
+    // platform.attach_window(imgui.io_mut(), &window, HiDpiMode::Default);
+    // imgui.set_ini_filename(None);
 
     let mut renderer = D3D11Renderer::create(&window, width, height).unwrap();
-    let mut imgui_renderer = D3D11ImGuiRenderer::init(
-        unsafe { renderer.device.as_mut().unwrap() },
-        unsafe { renderer.device_context.as_mut().unwrap() },
-        &mut imgui,
-    )
-    .unwrap();
+    // let mut imgui_renderer = D3D11ImGuiRenderer::init(
+    //     unsafe { renderer.device.as_mut().unwrap() },
+    //     unsafe { renderer.device_context.as_mut().unwrap() },
+    //     &mut imgui,
+    // )
+    // .unwrap();
 
     window.set_visible(true);
 
     event_loop.run(move |event, _, control_flow| {
-        platform.handle_event(imgui.io_mut(), &window, &event);
+        // platform.handle_event(imgui.io_mut(), &window, &event);
 
         match event {
             Event::WindowEvent {
@@ -94,16 +99,16 @@ fn main() {
                 event: WindowEvent::Resized(_),
                 ..
             } => {
-                let (width, height) = window.inner_size().to_physical(hidpi_factor).into();
-                renderer.resize(width, height);
+                // let (width, height) = window.inner_size().to_physical(hidpi_factor).into();
+                // renderer.resize(width, height);
             }
             Event::EventsCleared => {
-                platform
-                    .prepare_frame(imgui.io_mut(), &window)
-                    .expect("Failed to prepare frame");
-                let ui = imgui.frame();
+                // platform
+                //     .prepare_frame(imgui.io_mut(), &window)
+                //     .expect("Failed to prepare frame");
+                // let ui = imgui.frame();
                 renderer.render();
-                imgui_renderer.render_ui(ui);
+                // imgui_renderer.render_ui(ui);
                 renderer.present();
             }
             _ => {}
@@ -116,6 +121,36 @@ macro_rules! release_com_object {
         if let Some(com_object) = unsafe { $var.as_mut() } {
             unsafe { com_object.Release() };
             $var = ptr::null_mut();
+        }
+    };
+}
+
+/// Call COM object method where the last argument is the out variable
+macro_rules! cclom {
+    ($obj:expr, $method:ident$(,)? $($arg:expr),*) => {
+        {
+            let mut out = ptr::null_mut();
+            unsafe { $obj.$method($($arg, )* &mut out) };
+            if out == ptr::null_mut() {
+                Err(concat!(stringify!($method), " returned a null-pointer"))
+            } else {
+                Ok(unsafe { ComPtr::from_raw(out) })
+            }
+        }
+    };
+}
+
+/// Call COM object method where the first argument is the out variable
+macro_rules! ccfom {
+    ($obj:expr, $method:ident$(,)? $($arg:expr),*) => {
+        {
+            let mut out = ptr::null_mut();
+            unsafe { $obj.$method(&mut out $(, $arg)* ) };
+            if out == ptr::null_mut() {
+                Err(concat!(stringify!($method), " returned a null-pointer"))
+            } else {
+                Ok(unsafe { ComPtr::from_raw(out) })
+            }
         }
     };
 }
@@ -196,6 +231,9 @@ impl D3D11Renderer {
                     &mut device_context,
                 )
             };
+            if SUCCEEDED(result) {
+                break;
+            }
         }
         if FAILED(result) {
             // let message = OsStr::new("FAILED TO CREATE DEVICE AND SWAP CHAIN\0")
@@ -626,12 +664,12 @@ impl D3D11ImGuiRenderer {
         };
 
         let (index_buffer, index_buffer_size) = {
-            let vertex_buffer_size = 10_000;
+            let index_buffer_size = 10_000;
 
             let mut desc = D3D11_BUFFER_DESC::default();
             desc.Usage = D3D11_USAGE_DYNAMIC;
             desc.ByteWidth = vertex_buffer_size * mem::size_of::<DrawVert>() as u32;
-            desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+            desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
             desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
             desc.MiscFlags = 0;
 
@@ -640,9 +678,9 @@ impl D3D11ImGuiRenderer {
             if hresult != S_OK {
                 return Err(hresult);
             }
-            let vertex_buffer = unsafe { ComPtr::from_raw(index_buffer) };
+            let index_buffer = unsafe { ComPtr::from_raw(index_buffer) };
 
-            (vertex_buffer, vertex_buffer_size)
+            (index_buffer, index_buffer_size)
         };
 
         Ok(Self {
@@ -671,10 +709,150 @@ impl D3D11ImGuiRenderer {
         if draw_data.display_size[0] <= 0.0 || draw_data.display_size[1] <= 0.0 {
             return;
         }
+
+        if self.vertex_buffer_size < draw_data.total_vtx_count as u32 {
+            // `self.vertex_buffer` might be a dangling pointer after this
+            unsafe { self.vertex_buffer.Release() };
+            self.vertex_buffer_size = draw_data.total_vtx_count as u32 + 5_000;
+            let mut desc = D3D11_BUFFER_DESC::default();
+            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.ByteWidth = self.vertex_buffer_size * mem::size_of::<DrawVert>() as u32;
+            desc.BindFlags = D3D11_BIND_VERTEX_BUFFER;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            desc.MiscFlags = 0;
+            self.vertex_buffer = {
+                let mut vertex_buffer = ptr::null_mut();
+                let hresult = unsafe {
+                    self.device
+                        .CreateBuffer(&desc, ptr::null_mut(), &mut vertex_buffer)
+                };
+                if hresult != S_OK {
+                    panic!("Could not create new vertex buffer: {:X}", hresult)
+                }
+
+                unsafe { ComPtr::from_raw(vertex_buffer) }
+            };
+        }
+        if self.index_buffer_size < draw_data.total_idx_count as u32 {
+            // `self.index_buffer` might be a dangling pointer after this
+            unsafe { self.index_buffer.Release() };
+            self.index_buffer_size = draw_data.total_vtx_count as u32 + 5_000;
+            let mut desc = D3D11_BUFFER_DESC::default();
+            desc.Usage = D3D11_USAGE_DYNAMIC;
+            desc.ByteWidth = self.index_buffer_size * mem::size_of::<DrawVert>() as u32;
+            desc.BindFlags = D3D11_BIND_INDEX_BUFFER;
+            desc.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+            desc.MiscFlags = 0;
+            self.index_buffer = {
+                let mut index_buffer = ptr::null_mut();
+                let hresult = unsafe {
+                    self.device
+                        .CreateBuffer(&desc, ptr::null_mut(), &mut index_buffer)
+                };
+                if hresult != S_OK {
+                    panic!("Could not create new index buffer: {:X}", hresult)
+                }
+
+                unsafe { ComPtr::from_raw(index_buffer) }
+            };
+        }
+
+        // let vertex_resource = {
+        //     let vertex_resource = D3D11_MAPPED_SUBRESOURCE::default();
+        //     unsafe { self.device_context.map() }
+        // };
+        // let index_resource = D3D11_MAPPED_SUBRESOURCE::default();
     }
 
-    fn setup_render_state(&self) {
-        //
+    fn setup_render_state(&self, draw_data: &DrawData) {
+        let mut viewport = D3D11_VIEWPORT::default();
+        viewport.Width = draw_data.display_size[0];
+        viewport.Height = draw_data.display_size[1];
+        viewport.MinDepth = 0.0;
+        viewport.MaxDepth = 1.0;
+        viewport.TopLeftX = 0.0;
+        viewport.TopLeftY = 0.0;
+        unsafe { self.device_context.RSSetViewports(1, &viewport) };
+
+        let stride = mem::size_of::<DrawVert>() as u32;
+        let offset = 0;
+        unsafe {
+            self.device_context
+                .IASetInputLayout(self.input_layout.as_raw())
+        };
+        unsafe {
+            self.device_context.IASetVertexBuffers(
+                0,
+                1,
+                &self.vertex_buffer.as_raw(),
+                &stride,
+                &offset,
+            )
+        };
+        unsafe {
+            self.device_context.IASetIndexBuffer(
+                self.index_buffer.as_raw(),
+                if mem::size_of::<DrawIdx>() == 2 {
+                    DXGI_FORMAT_R16_UINT
+                } else {
+                    DXGI_FORMAT_R32_UINT
+                },
+                0,
+            )
+        };
+        unsafe {
+            self.device_context
+                .IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST)
+        };
+        unsafe {
+            self.device_context
+                .VSSetShader(self.vertex_shader.as_raw(), ptr::null_mut(), 0);
+        };
+        unsafe {
+            self.device_context
+                .VSSetConstantBuffers(0, 1, &self.vertex_constant_buffer.as_raw())
+        };
+        unsafe {
+            self.device_context
+                .PSSetShader(self.pixel_shader.as_raw(), ptr::null_mut(), 0);
+        };
+        unsafe {
+            self.device_context
+                .PSSetSamplers(0, 1, &self.font_sampler.as_raw());
+        };
+        unsafe {
+            self.device_context
+                .GSSetShader(ptr::null_mut(), ptr::null_mut(), 0)
+        };
+        unsafe {
+            self.device_context
+                .HSSetShader(ptr::null_mut(), ptr::null_mut(), 0)
+        };
+        unsafe {
+            self.device_context
+                .DSSetShader(ptr::null_mut(), ptr::null_mut(), 0)
+        };
+        unsafe {
+            self.device_context
+                .CSSetShader(ptr::null_mut(), ptr::null_mut(), 0)
+        };
+
+        let blend_factor = [0.0, 0.0, 0.0, 0.0];
+        unsafe {
+            self.device_context.OMSetBlendState(
+                self.blend_state.as_raw(),
+                &blend_factor,
+                0xffffffff,
+            )
+        };
+        unsafe {
+            self.device_context
+                .OMSetDepthStencilState(self.depth_stencil_state.as_raw(), 0)
+        };
+        unsafe {
+            self.device_context
+                .RSSetState(self.rasterizer_state.as_raw())
+        };
     }
 }
 
@@ -739,36 +917,6 @@ struct BackupD3D11State {
     vertex_buffer_offset: u32,
     index_buffer_format: DXGI_FORMAT,
     input_layout: ComPtr<ID3D11InputLayout>,
-}
-
-/// Call COM object method where the last argument is the out variable
-macro_rules! cclom {
-    ($obj:expr, $method:ident$(,)? $($arg:expr),*) => {
-        {
-            let mut out = ptr::null_mut();
-            unsafe { $obj.$method($($arg, )* &mut out) };
-            if out == ptr::null_mut() {
-                Err(concat!(stringify!($method), " returned a null-pointer"))
-            } else {
-                Ok(unsafe { ComPtr::from_raw(out) })
-            }
-        }
-    };
-}
-
-/// Call COM object method where the first argument is the out variable
-macro_rules! ccfom {
-    ($obj:expr, $method:ident$(,)? $($arg:expr),*) => {
-        {
-            let mut out = ptr::null_mut();
-            unsafe { $obj.$method(&mut out $(, $arg)* ) };
-            if out == ptr::null_mut() {
-                Err(concat!(stringify!($method), " returned a null-pointer"))
-            } else {
-                Ok(unsafe { ComPtr::from_raw(out) })
-            }
-        }
-    };
 }
 
 impl BackupD3D11State {
