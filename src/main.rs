@@ -60,16 +60,16 @@ const PIXEL_SHADER_BLOB: &[u8] = include_bytes!(env!("IMGUI_PIXEL_SHADER_BLOB"))
 
 fn main() {
     let event_loop = EventLoop::new();
-    let (window, width, height, hidpi_factor) = {
+    let (window, width, height, _scale_factor) = {
         let window = WindowBuilder::new()
             .with_visible(false)
             .build(&event_loop)
             .unwrap();
 
-        let hidpi_factor = window.hidpi_factor();
-        let (width, height) = window.inner_size().to_physical(hidpi_factor).into();
+        let scale_factor = window.scale_factor();
+        let (width, height) = window.inner_size().into();
 
-        (window, width, height, hidpi_factor)
+        (window, width, height, scale_factor)
     };
 
     let mut imgui = imgui::Context::create();
@@ -102,10 +102,10 @@ fn main() {
                 event: WindowEvent::Resized(_),
                 ..
             } => {
-                let (width, height) = window.inner_size().to_physical(hidpi_factor).into();
+                let (width, height) = window.inner_size().into();
                 renderer.resize(width, height);
             }
-            Event::EventsCleared => {
+            Event::MainEventsCleared => {
                 let now = std::time::Instant::now();
                 let delta = now - last_frame;
                 let delta_s = delta.as_micros();

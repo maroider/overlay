@@ -14,14 +14,14 @@ categories = ["gui"]
 
 license = "MIT OR APACHE-2.0"
 
-maintenance = { status = "actively-developed" }
-
 [dependencies]
-imgui = "0.2.1"
-imgui-winit-support = { version = "0.2.1", default-features = false, features = ["winit-20"] }
+# imgui = "0.2.1"
+# imgui-winit-support = { version = "0.2.1", default-features = false, features = ["winit-20"] }
+imgui = { git = "https://github.com/Gekkio/imgui-rs", rev = "e1620a0" }
+imgui-winit-support = { git = "https://github.com/Gekkio/imgui-rs", rev = "e1620a0", default-features = false, features = ["winit-20"] }
 raw-window-handle = "0.3.3"
-smallvec = "1.1.0"
-winit = "=0.20.0-alpha5"
+smallvec = "1.2.0"
+winit = "0.20.0"
 wio = "0.2.2"
 
 [target.'cfg(windows)'.dependencies.winapi]
@@ -42,7 +42,7 @@ features = [
 [dev-dependencies]
 
 [build-dependencies]
-cargo-emit = "0.1"
+cargo-emit = "0.1.1"
 dunce = "1.0.0"
 winapi = { version = "0.3.8", features = ["d3dcompiler", "winerror"] }
 wio = "0.2.2"
