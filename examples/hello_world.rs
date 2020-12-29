@@ -1,57 +1,71 @@
 //! This example is a lightly modified version of `imgui-wgpu`'s `hello_world` example.
 
-use imgui::*;
-use imgui_wgpu::Renderer;
-use imgui_winit_support;
-use overlay::OverlayBuilder;
 use std::time::Instant;
+
+use imgui::*;
+use imgui_wgpu::{Renderer, RendererConfig};
+use overlay::OverlayBuilder;
+use pollster::block_on;
 use winit::{
+    dpi::LogicalSize,
     event::{
         DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, VirtualKeyCode,
         WindowEvent,
     },
     event_loop::{ControlFlow, EventLoop},
+    window::Window,
 };
 
 fn main() {
-    env_logger::init();
+    wgpu_subscriber::initialize_default_subscriber(None);
 
     // Set up window and GPU
     let event_loop = EventLoop::new();
-    let (mut overlay, mut size, surface, hidpi_factor) = {
+
+    let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
+
+    let (mut overlay, size, surface) = {
+        let version = env!("CARGO_PKG_VERSION");
+
+        let window = Window::new(&event_loop).unwrap();
+        window.set_inner_size(LogicalSize {
+            width: 1280.0,
+            height: 720.0,
+        });
+        window.set_title(&format!("imgui-wgpu {}", version));
+        let size = window.inner_size();
+
         let overlay = OverlayBuilder::new()
             .with_inactive_opacity(220)
             .build(&event_loop)
             .unwrap();
         let window = overlay.window();
-        let hidpi_factor = window.hidpi_factor();
-        let size = window.inner_size().to_physical(hidpi_factor);
+        let scale_factor = window.scale_factor();
+        let size = window.inner_size();
 
-        let surface = wgpu::Surface::create(window);
+        let surface = unsafe { instance.create_surface(window) };
 
-        (overlay, size, surface, hidpi_factor)
+        (overlay, size, surface)
     };
 
-    let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::LowPower,
-        backends: wgpu::BackendBit::PRIMARY,
-    })
+    let scale_factor = overlay.window().scale_factor();
+
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::HighPerformance,
+        compatible_surface: Some(&surface),
+    }))
     .unwrap();
 
-    let (mut device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-        extensions: wgpu::Extensions {
-            anisotropic_filtering: false,
-        },
-        limits: wgpu::Limits::default(),
-    });
+    let (device, queue) =
+        block_on(adapter.request_device(&wgpu::DeviceDescriptor::default(), None)).unwrap();
 
     // Set up swap chain
-    let mut sc_desc = wgpu::SwapChainDescriptor {
+    let sc_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-        format: wgpu::TextureFormat::Bgra8Unorm,
+        format: wgpu::TextureFormat::Bgra8UnormSrgb,
         width: size.width as u32,
         height: size.height as u32,
-        present_mode: wgpu::PresentMode::NoVsync,
+        present_mode: wgpu::PresentMode::Mailbox,
     };
 
     let mut swap_chain = device.create_swap_chain(&surface, &sc_desc);
@@ -66,8 +80,8 @@ fn main() {
     );
     imgui.set_ini_filename(None);
 
-    let font_size = (13.0 * hidpi_factor) as f32;
-    imgui.io_mut().font_global_scale = (1.0 / hidpi_factor) as f32;
+    let font_size = (13.0 * scale_factor) as f32;
+    imgui.io_mut().font_global_scale = (1.0 / scale_factor) as f32;
 
     imgui.fonts().add_font(&[FontSource::DefaultFontData {
         config: Some(imgui::FontConfig {
@@ -82,27 +96,30 @@ fn main() {
     // Set up dear imgui wgpu renderer
     //
     let clear_color = wgpu::Color {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 0.0,
+        r: 0.1,
+        g: 0.2,
+        b: 0.3,
+        a: 1.0,
     };
-    let mut renderer = Renderer::new(
-        &mut imgui,
-        &device,
-        &mut queue,
-        sc_desc.format,
-        Some(clear_color),
-    );
+
+    let renderer_config = RendererConfig {
+        texture_format: sc_desc.format,
+        ..Default::default()
+    };
+
+    let mut renderer = Renderer::new(&mut imgui, &device, &queue, renderer_config);
 
     let mut last_frame = Instant::now();
     let mut demo_open = true;
+
+    let mut last_cursor = None;
 
     overlay.init();
 
     let mut overlay_toggle_lockout = false;
 
     // Event loop
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = if cfg!(feature = "metal-auto-capture") {
             ControlFlow::Exit
@@ -114,28 +131,29 @@ fn main() {
                 event: WindowEvent::Resized(_),
                 ..
             } => {
-                size = overlay.window().inner_size().to_physical(hidpi_factor);
+                let size = overlay.window().inner_size();
 
-                sc_desc = wgpu::SwapChainDescriptor {
+                let sc_desc = wgpu::SwapChainDescriptor {
                     usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
-                    format: wgpu::TextureFormat::Bgra8Unorm,
+                    format: wgpu::TextureFormat::Bgra8UnormSrgb,
                     width: size.width as u32,
                     height: size.height as u32,
-                    present_mode: wgpu::PresentMode::NoVsync,
+                    present_mode: wgpu::PresentMode::Mailbox,
                 };
 
                 swap_chain = device.create_swap_chain(&surface, &sc_desc);
             }
+            #[allow(deprecated)]
             Event::DeviceEvent {
                 event:
                     DeviceEvent::Key(KeyboardInput {
                         virtual_keycode: Some(VirtualKeyCode::Escape),
                         state: ElementState::Pressed,
-                        modifiers: ModifiersState { shift: true, .. },
+                        modifiers,
                         ..
                     }),
                 ..
-            } => {
+            } if modifiers.shift() => {
                 if !overlay_toggle_lockout {
                     overlay.toggle();
                     overlay_toggle_lockout = true;
@@ -160,13 +178,20 @@ fn main() {
             } => {
                 *control_flow = ControlFlow::Exit;
             }
-            Event::EventsCleared => {
+            Event::MainEventsCleared => overlay.window().request_redraw(),
+            Event::RedrawEventsCleared => {
+                let delta_s = last_frame.elapsed();
                 let now = Instant::now();
-                let delta = now - last_frame;
-                let delta_s = delta.as_micros();
+                imgui.io_mut().update_delta_time(now - last_frame);
                 last_frame = now;
 
-                let frame = swap_chain.get_next_texture();
+                let frame = match swap_chain.get_current_frame() {
+                    Ok(frame) => frame,
+                    Err(e) => {
+                        eprintln!("dropped frame: {:?}", e);
+                        return;
+                    }
+                };
                 platform
                     .prepare_frame(imgui.io_mut(), overlay.window())
                     .expect("Failed to prepare frame");
@@ -178,7 +203,7 @@ fn main() {
                         .size([300.0, 100.0], Condition::FirstUseEver)
                         .build(&ui, || {
                             ui.text(im_str!("Hello world!"));
-                            ui.text(im_str!("This...is...imgui-rs on WGPU on an overlay!"));
+                            ui.text(im_str!("This...is...imgui-rs on WGPU!"));
                             ui.separator();
                             let mouse_pos = ui.io().mouse_pos;
                             ui.text(im_str!(
@@ -193,21 +218,39 @@ fn main() {
                         .size([400.0, 200.0], Condition::FirstUseEver)
                         .position([400.0, 200.0], Condition::FirstUseEver)
                         .build(&ui, || {
-                            ui.text(im_str!("Frametime: {}us", delta_s));
+                            ui.text(im_str!("Frametime: {:?}", delta_s));
                         });
 
                     ui.show_demo_window(&mut demo_open);
                 }
 
                 let mut encoder: wgpu::CommandEncoder =
-                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+                    device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
-                platform.prepare_render(&ui, overlay.window());
+                if last_cursor != Some(ui.mouse_cursor()) {
+                    last_cursor = Some(ui.mouse_cursor());
+                    platform.prepare_render(&ui, overlay.window());
+                }
+
+                let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                        attachment: &frame.output.view,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(clear_color),
+                            store: true,
+                        },
+                    }],
+                    depth_stencil_attachment: None,
+                });
+
                 renderer
-                    .render(ui, &mut device, &mut encoder, &frame.view)
+                    .render(ui.render(), &queue, &device, &mut rpass)
                     .expect("Rendering failed");
 
-                queue.submit(&[encoder.finish()]);
+                drop(rpass);
+
+                queue.submit(Some(encoder.finish()));
             }
             _ => (),
         }

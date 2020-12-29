@@ -66,9 +66,8 @@ impl OverlayBuilder {
 
         os::make_window_overlay(&window);
 
-        let hidpi_factor = window.hidpi_factor();
         window.set_outer_position(LogicalPosition { x: 0.0, y: 0.0 });
-        window.set_inner_size(window.current_monitor().size().to_logical(hidpi_factor));
+        window.set_inner_size(window.current_monitor().unwrap().size());
 
         Ok(Overlay::new(
             window,
