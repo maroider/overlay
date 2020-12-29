@@ -14,9 +14,6 @@ categories = ["gui"]
 
 license = "MIT OR APACHE-2.0"
 
-[badges]
-maintenance = { status = "actively-developed" }
-
 [dependencies]
 winit = "0.20.0-alpha5"
 
