@@ -1,6 +1,13 @@
 # Overlays
 
-Game overlays are usually created by hooking into the game's process. That kind of technique is beyond my current skillset. Luckilly, I've managed to find a technique that works well enough for me by using my search engine of choice.
+Game overlays are usually created in one of two ways:
+
+- by injecting code into the game and hooking rendering API functions (OpenGL, Direct3D, Vulkan, etc.)
+- by creating a specially crafted window
+
+This crate uses the second technique, and I'm working on a yet-to-be-announced crate utilizing the first technique.
+
+There is also (potentially) a third way to draw an overlay which involves messing with the compositor, but I haven't really looked into that.
 
 ## Usage
 
@@ -14,9 +21,6 @@ fn main() {
 
     // Initialize renderer
 
-    // Display the overlay
-    overlay.init();
-
     event_loop.run(..);
 }
 ```
@@ -24,12 +28,16 @@ fn main() {
 To toggle the overlay, use `Overlay::toggle(..)`.
 
 ## Limitiations
- * The game has to be in either Windowed or Windowed Borderless.
- * Currently only works on Windows.
- * There's currenty no way to specify which monitor the overlay spawns on.
- * The window that the overlay is based on will show as an icon in the task bar.
- * The window that the overlay is based on behaves like a window in other inconvenient ways.
+
+- The game has to be in either Windowed or Windowed Borderless.
+- Currently only works on Windows and X11.
+- There's currenty no way to specify which monitor the overlay spawns on.
+- "Hugging" the target window isn't implemented yet ([#2]).
+- (Windows) The window that the overlay is based on will show as an icon in the task bar.
+- (Windows) The window that the overlay is based on behaves like a window in other inconvenient ways.
 
 ## How does it work?
 
-You can see how it works by looking at `src/os.rs` and [reading this CodeProject article from 2007](https://www.codeproject.com/Articles/12877/Transparent-Click-Through-Forms). Some bits are (presumably) there to work around the way `winit` sets things up.
+The Windows implementation is based on [this CodeProject article from 2007](https://www.codeproject.com/Articles/12877/Transparent-Click-Through-Forms).
+
+[#2]: https://github.com/maroider/overlay/issues/2
