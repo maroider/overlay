@@ -98,8 +98,6 @@ fn main() {
 
     let mut last_cursor = None;
 
-    overlay.init();
-
     let mut overlay_toggle_lockout = false;
 
     // Event loop

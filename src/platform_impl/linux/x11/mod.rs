@@ -8,7 +8,7 @@ use xcb::{
     Connection,
 };
 
-pub fn make_window_overlay(window: &Window, opacity: u8) {
+pub fn make_window_overlay(window: &Window) {
     window.set_always_on_top(true);
 
     let (xcb_connection, xcb_window) = winit_to_xcb(window);
@@ -24,8 +24,6 @@ pub fn make_window_overlay(window: &Window, opacity: u8) {
         &[Rectangle::new(0, 0, 0, 0)],
     );
 
-    set_window_overlay_opacity(window, opacity);
-
     xproto::set_input_focus(
         &xcb_connection,
         xproto::INPUT_FOCUS_PARENT as u8,
@@ -34,7 +32,7 @@ pub fn make_window_overlay(window: &Window, opacity: u8) {
     );
 }
 
-pub fn make_window_overlay_clickable(window: &Window, opacity: u8) {
+pub fn make_window_overlay_clickable(window: &Window) {
     let (xcb_connection, xcb_window) = winit_to_xcb(window);
 
     shape::mask(
@@ -46,8 +44,6 @@ pub fn make_window_overlay_clickable(window: &Window, opacity: u8) {
         0,
         xproto::PIXMAP_NONE,
     );
-
-    set_window_overlay_opacity(window, opacity);
 }
 
 pub fn set_window_overlay_opacity(window: &Window, opacity: u8) {
