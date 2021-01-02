@@ -14,11 +14,18 @@ categories = ["gui"]
 
 license = "MIT OR APACHE-2.0"
 
+[features]
+default = ["x11"]
+x11 = ["xcb"]
+
 [dependencies]
 winit = "0.23.0"
 
-[target.'cfg(windows)'.dependencies]
+[target.'cfg(target_os = "windows")'.dependencies]
 winapi = { version = "0.3.8", features = ["windef", "winuser"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
+xcb = { version = "0.9.0", features = ["composite"], optional = true }
 
 [dev-dependencies]
 env_logger = "0.8.2"

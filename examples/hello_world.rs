@@ -7,13 +7,8 @@ use imgui_wgpu::{Renderer, RendererConfig};
 use overlay::OverlayBuilder;
 use pollster::block_on;
 use winit::{
-    dpi::LogicalSize,
-    event::{
-        DeviceEvent, ElementState, Event, KeyboardInput, ModifiersState, VirtualKeyCode,
-        WindowEvent,
-    },
+    event::{DeviceEvent, ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::Window,
 };
 
 fn main() {
@@ -25,22 +20,11 @@ fn main() {
     let instance = wgpu::Instance::new(wgpu::BackendBit::PRIMARY);
 
     let (mut overlay, size, surface) = {
-        let version = env!("CARGO_PKG_VERSION");
-
-        let window = Window::new(&event_loop).unwrap();
-        window.set_inner_size(LogicalSize {
-            width: 1280.0,
-            height: 720.0,
-        });
-        window.set_title(&format!("imgui-wgpu {}", version));
-        let size = window.inner_size();
-
         let overlay = OverlayBuilder::new()
             .with_inactive_opacity(220)
             .build(&event_loop)
             .unwrap();
         let window = overlay.window();
-        let scale_factor = window.scale_factor();
         let size = window.inner_size();
 
         let surface = unsafe { instance.create_surface(window) };
