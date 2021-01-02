@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+    paths:
+      - "**.rs"
+      - ".github/workflows/ci.yml"
+  push:
+    paths:
+      - "**.rs"
+      - ".github/workflows/ci.yml"
+
+jobs:
+  formatting:
+    name: Rustfmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: rustfmt
+          override: true
+      - uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all -- --check
+
+  test:
+    name: Test
+
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [stable, nightly]
+        platform:
+          - { target: x86_64-pc-windows-msvc,   os: windows-latest }
+          - { target: i686-pc-windows-msvc,     os: windows-latest }
+          - { target: i686-unknown-linux-gnu,   os: ubuntu-latest  }
+          - { target: x86_64-unknown-linux-gnu, os: ubuntu-latest  }
+
+    env:
+      RUST_BACKTRACE: 1
+      CARGO_INCREMENTAL: 0
+      RUSTFLAGS: "-C debuginfo=0"
+
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          target: ${{ matrix.platform.target }}
+          profile: minimal
+
+      - name: Install libxcb
+        if: (matrix.platform.os == 'ubuntu-latest')
+        run: sudo apt-get update && sudo apt-get install libxcb-composite0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: Install GCC Multilib
+        if: (matrix.platform.os == 'ubuntu-latest') && contains(matrix.platform.target, 'i686')
+        run: sudo apt-get install gcc-multilib
+
+      - name: Check documentation
+        uses: actions-rs/cargo@v1
+        with:
+          command: doc
+          args: --no-deps --target ${{ matrix.platform.target }}
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --verbose --target ${{ matrix.platform.target }}
+
+      - name: Build tests
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: --no-run --verbose --target ${{ matrix.platform.target }}
