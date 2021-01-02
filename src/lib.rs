@@ -64,9 +64,10 @@ impl OverlayBuilder {
             .with_decorations(false)
             .build(&event_loop)?;
 
-        make_window_overlay(&window);
+        platform_impl::make_window_overlay(&window);
+        platform_impl::set_window_overlay_opacity(&window, self.inactive_opacity.unwrap_or(0));
 
-        window.set_outer_position(LogicalPosition { x: 200.0, y: 0.0 });
+        window.set_outer_position(LogicalPosition { x: 0.0, y: 0.0 });
         window.set_inner_size(window.current_monitor().unwrap().size());
 
         Ok(Overlay::new(
@@ -80,7 +81,6 @@ impl OverlayBuilder {
 /// An overlay.
 pub struct Overlay {
     window: Window,
-    init: bool,
     active: bool,
     active_opacity: u8,
     inactive_opacity: u8,
@@ -90,39 +90,41 @@ impl Overlay {
     fn new(window: Window, active_opacity: u8, inactive_opacity: u8) -> Self {
         Self {
             window,
-            init: false,
             active: false,
             active_opacity,
             inactive_opacity,
         }
     }
 
-    /// Initializes the overlay. Should be called before calling `Overlay::toggle()`.
-    pub fn init(&mut self) {
-        if !self.init {
-            set_window_overlay_opacity(&self.window, self.inactive_opacity);
-            self.init = true;
+    /// Toggle the overlay.
+    pub fn toggle(&mut self) {
+        if !self.active {
+            self.activate();
+        } else {
+            self.deactivate();
         }
     }
 
-    /// Toggle the overlay.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `Overlay::init()` hasn't already been called.
-    pub fn toggle(&mut self) {
-        if !self.init {
-            panic!(
-                "`Overlay::init()` should be called once before ever calling `Overlay::toggle()`"
-            );
+    /// Make the overlay clickable.
+    pub fn activate(&mut self) {
+        if !self.active {
+            self.active = true;
+            platform_impl::make_window_overlay_clickable(&self.window);
+            platform_impl::set_window_overlay_opacity(&self.window, self.active_opacity);
         }
+    }
 
+    /// Make the overlay transparent to inputs.
+    pub fn deactivate(&mut self) {
         if self.active {
-            make_window_overlay_clickthrough(&self.window, self.inactive_opacity);
-        } else {
-            make_window_overlay_clickable(&self.window, self.active_opacity);
+            self.active = false;
+            platform_impl::make_window_overlay(&self.window);
+            platform_impl::set_window_overlay_opacity(&self.window, self.inactive_opacity);
         }
-        self.active = !self.active;
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active
     }
 
     /// Returns the underlying window.
@@ -155,20 +157,4 @@ impl From<winit::error::OsError> for OverlayCreationError {
     fn from(from: winit::error::OsError) -> Self {
         Self::Winit(from)
     }
-}
-
-fn make_window_overlay(window: &Window) {
-    platform_impl::make_window_overlay(window, 0);
-}
-
-fn make_window_overlay_clickthrough(window: &Window, opacity: u8) {
-    platform_impl::make_window_overlay(window, opacity);
-}
-
-fn make_window_overlay_clickable(window: &Window, opacity: u8) {
-    platform_impl::make_window_overlay_clickable(window, opacity);
-}
-
-fn set_window_overlay_opacity(window: &Window, opacity: u8) {
-    platform_impl::set_window_overlay_opacity(window, opacity);
 }

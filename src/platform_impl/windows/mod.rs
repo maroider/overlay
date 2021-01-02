@@ -12,7 +12,7 @@ use winit::{platform::windows::WindowExtWindows, window::Window};
 const WS_EX_TRANSPARENT: isize = 0x20;
 const WS_EX_LAYERED: isize = 0x80000;
 
-pub fn make_window_overlay(window: &Window, opacity: u8) {
+pub fn make_window_overlay(window: &Window) {
     window.set_always_on_top(true);
 
     let hwnd = window.hwnd() as HWND;
@@ -27,12 +27,10 @@ pub fn make_window_overlay(window: &Window, opacity: u8) {
         panic!("SetWindowLongPtr returned 0");
     }
 
-    set_window_overlay_opacity(window, opacity);
-
     unsafe { make_last_active_window_active(hwnd) };
 }
 
-pub fn make_window_overlay_clickable(window: &Window, opacity: u8) {
+pub fn make_window_overlay_clickable(window: &Window) {
     window.set_always_on_top(false);
 
     let hwnd = window.hwnd().cast() as HWND;
@@ -46,8 +44,6 @@ pub fn make_window_overlay_clickable(window: &Window, opacity: u8) {
     if unsafe { SetWindowLongPtrW(hwnd, GWL_EXSTYLE, window_styles.try_into().unwrap()) } == 0 {
         panic!("SetWindowLongPtr returned 0");
     }
-
-    set_window_overlay_opacity(window, opacity);
 }
 
 unsafe fn make_last_active_window_active(hwnd: HWND) {
