@@ -138,6 +138,54 @@ impl Overlay {
     }
 }
 
+/// For when you can't give away ownership of the window.
+pub struct BorrowedOverlay {
+    active: bool,
+    pub active_opacity: u8,
+    pub inactive_opacity: u8,
+}
+
+impl BorrowedOverlay {
+    pub fn new(active: bool, active_opacity: u8, inactive_opacity: u8) -> Self {
+        Self {
+            active,
+            active_opacity,
+            inactive_opacity,
+        }
+    }
+
+    pub fn toggle(&mut self, window: &Window) {
+        if !self.active {
+            self.activate(window)
+        } else {
+            self.deactivate(window)
+        }
+    }
+
+    /// Make the overlay clickable.
+    pub fn activate(&mut self, window: &Window) {
+        if !self.active {
+            self.active = true;
+            platform_impl::make_window_overlay_clickable(&window);
+            platform_impl::set_window_overlay_opacity(&window, self.active_opacity);
+        }
+    }
+
+    /// Make the overlay transparent to inputs.
+    pub fn deactivate(&mut self, window: &Window) {
+        if self.active {
+            self.active = false;
+            platform_impl::make_window_overlay(window);
+            platform_impl::set_window_overlay_opacity(window, self.inactive_opacity);
+        }
+    }
+
+    /// Returns true if the overlay can be interacted with through mouse clicks.
+    pub fn is_active(&self) -> bool {
+        self.active
+    }
+}
+
 #[derive(Debug)]
 pub enum OverlayCreationError {
     Winit(winit::error::OsError),
